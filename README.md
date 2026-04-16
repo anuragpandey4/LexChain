@@ -2,8 +2,6 @@
 
 A decentralized application (dApp) featuring a decoupled architecture. The client-side handles direct Web3 interactions, while a dedicated Node.js backend indexes and tracks blockchain transaction hashes for optimized querying.
 
-Developed by Anurag Pandey (B.Tech, Computer Science and Engineering).
-
 ---
 
 ## ✨ Features & Visual Walkthrough
