@@ -4,6 +4,7 @@ import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../utils/config";
 import { generateFileHash } from "../utils/hash";
 import { uploadToIPFS } from "../utils/pinata";
 import { UploadCloud, Clock, CheckCircle } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function Upload() {
   const [file, setFile] = useState(null);
@@ -14,23 +15,21 @@ export default function Upload() {
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!file) return setError("Please select a file first.");
+    if (!file) return toast.error("Please select a file first.");
 
+   const toastId = toast.loading("Generating secure hash...");
     setLoading(true);
-    setError("");
-    setSuccess(false);
 
     try {
       // 1. Generate local SHA-256 hash of the document
-      setStatus("Generating cryptographic hash...");
       const docHash = await generateFileHash(file);
 
       // 2. Upload the actual file to IPFS via Pinata
-      setStatus("Uploading file to IPFS...");
+      toast.loading("Uploading encrypted file to IPFS...", { id: toastId });
       const ipfsHash = await uploadToIPFS(file);
 
       // 3. Connect to MetaMask
-      setStatus("Waiting for wallet approval...");
+      toast.loading("Please sign the transaction in MetaMask...", { id: toastId });
       if (!window.ethereum) throw new Error("Please install MetaMask.");
       
       const provider = new ethers.BrowserProvider(window.ethereum);
@@ -39,27 +38,22 @@ export default function Upload() {
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
       // 4. Send transaction to the smart contract
-      setStatus("Sending transaction to blockchain...");
-      
-      // ==========================================
-      // NEW: Added Gas Overrides for Polygon Amoy
-      // ==========================================
       const tx = await contract.uploadDocument(ipfsHash, docHash, {
         maxPriorityFeePerGas: ethers.parseUnits("30", "gwei"),
         maxFeePerGas: ethers.parseUnits("40", "gwei")
       });
       
-      setStatus("Waiting for block confirmation...");
+      toast.loading("Waiting for blockchain confirmation...", { id: toastId });
       await tx.wait(); // Wait for the transaction to be mined
 
-      setSuccess(true);
-      setStatus("Document successfully secured on LexChain!");
-      setFile(null); // Clear the input
+     toast.success("Document successfully secured on LexChain!", { id: toastId });
+     setFile(null);
     } catch (err) {
       console.error(err);
       // Catch duplicate document error from the contract
       if (err.message.includes("Document already exists")) {
-         setError("This document has already been uploaded to LexChain.");
+         console.error(error);
+      toast.error(error.reason || error.message || "Upload failed. Please try again.", { id: toastId });
       } else {
          setError(err.message || "An error occurred during upload.");
       }

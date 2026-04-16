@@ -12,7 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 1. Connect to MongoDB
+//Connect to MongoDB
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch((err) => console.error("❌ MongoDB connection error:", err));
@@ -89,7 +89,7 @@ async function pollForEvents() {
   }
 }
 
-// 3. Create the API Endpoint for your React Admin Panel
+// Endpoint for your React Admin Panel
 app.get("/api/documents/pending", async (req, res) => {
   try {
     // Instantly fetch all unverified documents from MongoDB
@@ -100,7 +100,23 @@ app.get("/api/documents/pending", async (req, res) => {
   }
 });
 
-// 4. Start the Server
+
+// Fetch documents for a specific user
+app.get("/api/documents/user/:address", async (req, res) => {
+  try {
+    const userAddress = req.params.address;
+    
+    // Using a case-insensitive regex because MetaMask addresses can vary in casing
+    const userDocs = await Document.find({ 
+        uploader: { $regex: new RegExp("^" + userAddress + "$", "i") } 
+    }).sort({ timestamp: -1 }); // Sort by newest first
+
+    res.json(userDocs);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to fetch user documents" });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 LexChain Indexer running on port ${PORT}`);

@@ -90,6 +90,8 @@ const NavigationBar = () => {
           <Link to="/upload" className="text-gray-600 hover:text-blue-600 font-medium">
             Upload Portal
           </Link>
+
+          <Link to="/my-uploads" className="hover:text-blue-200 transition font-medium">My Uploads</Link>
           
           {/* Only render this link if the user is the Admin */}
           {isAdmin && (
