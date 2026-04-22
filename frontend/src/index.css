@@ -1,1 +1,8 @@
 @import "tailwindcss";
+
+.bg-grid-pattern {
+  background-image: 
+    linear-gradient(to right, #e2e8f0 1px, transparent 1px),
+    linear-gradient(to bottom, #e2e8f0 1px, transparent 1px);
+  background-size: 32px 32px; /* Adjust this to make the squares bigger/smaller */
+}

@@ -117,6 +117,20 @@ app.get("/api/documents/user/:address", async (req, res) => {
   }
 });
 
+app.delete("/api/documents/:hash", async (req, res) => {
+  try {
+    const deletedDoc = await Document.findOneAndDelete({ docHash: req.params.hash });
+    
+    if (!deletedDoc) {
+      return res.status(404).json({ error: "Document not found." });
+    }
+    
+    res.json({ message: "Document successfully rejected and removed." });
+  } catch (error) {
+    res.status(500).json({ error: "Failed to reject document." });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 LexChain Indexer running on port ${PORT}`);

@@ -2,16 +2,13 @@ import { useState, useEffect } from "react";
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../utils/config";
 import { useWeb3 } from "../context/Web3Context";
-import { ShieldCheck, Search, Clock, CheckCircle, AlertTriangle, FileText } from "lucide-react";
+import { ShieldCheck, Clock, FileText, XCircle, Trash2 } from "lucide-react";
+import toast from "react-hot-toast";
 
 export default function Admin() {
-  const [hashInput, setHashInput] = useState("");
-  const [documentDetails, setDocumentDetails] = useState(null);
   const [pendingDocuments, setPendingDocuments] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [loadingList, setLoadingList] = useState(true);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
+  const [processingId, setProcessingId] = useState(null); // Tracks which specific doc is loading
 
   const { account } = useWeb3();
 
@@ -19,240 +16,161 @@ export default function Admin() {
     fetchPendingList();
   }, []);
 
-  // ==========================================
-  // Fetch from our Node.js Backend!
-  // ==========================================
   const fetchPendingList = async () => {
     setLoadingList(true);
     try {
-      // 1. Make a standard API call to our Express server
       const response = await fetch("http://localhost:5000/api/documents/pending");
-      
-      if (!response.ok) {
-        throw new Error("Network response was not ok");
-      }
-      
+      if (!response.ok) throw new Error("Network response was not ok");
       const data = await response.json();
       
-      // 2. Format the data for our UI
-      const formattedDocs = data.map(doc => ({
+      const formattedData = data.map(doc => ({
         hash: doc.docHash,
         ipfsHash: doc.ipfsHash,
         uploader: doc.uploader,
         date: new Date(doc.timestamp).toLocaleString()
       }));
-
-      setPendingDocuments(formattedDocs);
-    } catch (err) {
-      console.error("Failed to fetch pending list from backend:", err);
+      
+      setPendingDocuments(formattedData);
+    } catch (error) {
+      console.error("Error fetching list:", error);
+      toast.error("Failed to load pending documents.");
     } finally {
       setLoadingList(false);
     }
   };
 
-  const handleSearch = async (e) => {
-    e.preventDefault();
-    if (!hashInput) return setError("Please enter a document hash.");
+  const handleVerify = async (hash) => {
+    const toastId = toast.loading("Please sign the verification in MetaMask...");
+    setProcessingId(hash);
     
-    setLoading(true);
-    setError("");
-    setDocumentDetails(null);
-
-    try {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-      
-      // Read operations don't cost gas, so no overrides needed here
-      const [isVerified, ipfsHash, timestamp] = await contract.verify(hashInput);
-
-      if (timestamp === 0n) {
-        setError("No document found with this hash on LexChain.");
-      } else {
-        setDocumentDetails({
-          hash: hashInput,
-          isVerified,
-          ipfsHash,
-          date: new Date(Number(timestamp) * 1000).toLocaleString(),
-        });
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Failed to fetch document details.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleVerify = async (targetHash) => {
-    setLoading(true);
-    setError("");
-    setStatus("Waiting for wallet approval...");
-
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      setStatus("Sending verification transaction...");
+      // Assuming your contract function is called verifyDocument
+      const tx = await contract.verifyDocument(hash); 
       
-      // ==========================================
-      // NEW: Added Gas Overrides for Polygon Amoy
-      // ==========================================
-      const tx = await contract.verifyDocument(targetHash, {
-        maxPriorityFeePerGas: ethers.parseUnits("30", "gwei"),
-        maxFeePerGas: ethers.parseUnits("40", "gwei")
-      });
-      
-      setStatus("Waiting for block confirmation...");
-      await tx.wait(); 
+      toast.loading("Waiting for blockchain confirmation...", { id: toastId });
+      await tx.wait();
 
-      setStatus("");
+      toast.success("Document Officially Verified on LexChain!", { id: toastId });
       
-      // Refresh the list! The backend will have already updated MongoDB
-      // because it's listening to the DocumentVerified event.
-      fetchPendingList();
-      
-      if (documentDetails && documentDetails.hash === targetHash) {
-         setDocumentDetails((prev) => ({ ...prev, isVerified: true })); 
-      }
+      // THE BUG FIX: Remove the document from the UI immediately after success
+      setPendingDocuments(prev => prev.filter(doc => doc.hash !== hash));
       
     } catch (err) {
       console.error(err);
-      if (err.message.includes("Only the Government Agency")) {
-        setError("Transaction failed: Your wallet is not the Admin.");
-      } else {
-        setError("Transaction failed or was rejected.");
-      }
+      toast.error(err.reason || "Verification failed or was canceled.", { id: toastId });
     } finally {
-      setLoading(false);
+      setProcessingId(null);
+    }
+  };
+
+  const handleReject = async (hash) => {
+    // Safety check so the admin doesn't click it by accident
+    if (!window.confirm("Are you sure you want to REJECT and permanently delete this document?")) return;
+
+    const toastId = toast.loading("Rejecting document...");
+    setProcessingId(hash);
+
+    try {
+      const response = await fetch(`http://localhost:5000/api/documents/${hash}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error("Failed to delete from server");
+
+      toast.success("Document rejected and removed.", { id: toastId });
+      
+      // Remove from the UI immediately
+      setPendingDocuments(prev => prev.filter(doc => doc.hash !== hash));
+
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to reject the document.", { id: toastId });
+    } finally {
+      setProcessingId(null);
     }
   };
 
   return (
-    <div className="flex flex-col items-center mt-10 w-full max-w-4xl mx-auto px-4">
-      <div className="bg-slate-800 text-white p-3 rounded-full mb-4">
+    <div className="flex flex-col items-center mt-10 w-full max-w-5xl mx-auto px-4">
+      <div className="bg-green-100 text-green-600 p-3 rounded-full mb-4">
         <ShieldCheck size={40} />
       </div>
-      <h2 className="text-3xl font-bold text-slate-800 mb-2">Admin Dashboard</h2>
-      <p className="text-slate-600 mb-8 text-center max-w-md">
-        Review pending documents and issue official blockchain verification.
+      <h2 className="text-3xl font-bold text-slate-800 mb-2">Government Admin Portal</h2>
+      <p className="text-slate-600 mb-10 text-center">
+        Review pending IPFS documents and authorize their cryptographic verification on the blockchain.
       </p>
 
-      <div className="w-full grid md:grid-cols-2 gap-8 items-start">
-        
-        {/* LEFT COLUMN: Manual Search */}
-        <div className="w-full">
-          <h3 className="text-lg font-bold text-slate-800 mb-4 border-b pb-2">Manual Verification</h3>
-          <form onSubmit={handleSearch} className="mb-6">
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="Paste SHA-256 Hash..."
-                value={hashInput}
-                onChange={(e) => setHashInput(e.target.value)}
-                className="flex-1 p-3 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                disabled={loading}
-              />
-              <button
-                type="submit"
-                disabled={loading || !hashInput}
-                className="bg-slate-800 hover:bg-slate-900 text-white p-3 rounded-lg transition disabled:bg-slate-400"
-              >
-                <Search size={24} />
-              </button>
-            </div>
-          </form>
+      <div className="w-full bg-white shadow-sm border border-slate-200 rounded-xl p-6">
+        <h3 className="text-xl font-bold text-slate-800 border-b pb-4 mb-4 flex items-center gap-2">
+          <Clock className="text-slate-400" /> Pending Review Queue
+        </h3>
 
-          {error && (
-            <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6 flex items-start gap-3">
-              <AlertTriangle size={20} className="mt-0.5 flex-shrink-0" />
-              <p>{error}</p>
-            </div>
-          )}
-
-          {documentDetails && (
-            <div className="border border-slate-200 rounded-xl p-6 bg-white shadow-sm">
-              <div className="space-y-3 mb-6">
-                <p className="text-sm text-slate-600">
-                  <span className="font-semibold text-slate-800">Uploaded:</span> {documentDetails.date}
-                </p>
-                <p className="text-sm text-slate-600 truncate">
-                  <span className="font-semibold text-slate-800">IPFS:</span>{" "}
-                  <a href={`https://gateway.pinata.cloud/ipfs/${documentDetails.ipfsHash}`} target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">
-                    View File
-                  </a>
-                </p>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="font-semibold text-slate-800 text-sm">Status:</span>
-                  {documentDetails.isVerified ? (
-                    <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
-                      <CheckCircle size={14} /> Verified
-                    </span>
-                  ) : (
+        {loadingList ? (
+          <p className="text-center text-slate-500 my-10 animate-pulse">Fetching records from database...</p>
+        ) : pendingDocuments.length === 0 ? (
+          <div className="text-center py-12 flex flex-col items-center justify-center">
+            <ShieldCheck size={48} className="text-slate-300 mb-4" />
+            <p className="text-slate-500 font-medium">No pending documents to verify!</p>
+            <p className="text-sm text-slate-400 mt-1">All queues are clear.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {pendingDocuments.map((doc, index) => (
+              <div key={index} className="bg-slate-50 p-5 rounded-lg border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-6">
+                
+                <div className="flex-1 overflow-hidden">
+                  <div className="flex items-center gap-3 mb-2">
                     <span className="bg-yellow-100 text-yellow-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
                       <Clock size={14} /> Pending
                     </span>
-                  )}
-                </div>
-              </div>
-
-              {!documentDetails.isVerified && (
-                <button
-                  onClick={() => handleVerify(documentDetails.hash)}
-                  disabled={loading}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg transition disabled:bg-blue-400 flex justify-center items-center gap-2"
-                >
-                  {loading ? status || "Processing..." : "Verify Document"}
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* RIGHT COLUMN: Pending Inbox */}
-        <div className="w-full bg-slate-50 border border-slate-200 rounded-xl p-6 h-[500px] flex flex-col">
-          <div className="flex justify-between items-center border-b border-slate-200 pb-2 mb-4">
-            <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-              <FileText size={20}/> Pending Inbox
-            </h3>
-            <span className="bg-blue-100 text-blue-800 text-xs font-bold px-2 py-1 rounded-full">
-              {pendingDocuments.length}
-            </span>
-          </div>
-
-          <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-            {loadingList ? (
-              <p className="text-center text-slate-500 mt-10">Fetching from database...</p>
-            ) : pendingDocuments.length === 0 ? (
-              <p className="text-center text-slate-500 mt-10">No pending documents to verify!</p>
-            ) : (
-              pendingDocuments.map((doc, index) => (
-                <div key={index} className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                  <p className="text-xs text-slate-400 mb-1">{doc.date}</p>
-                  <p className="text-sm font-mono text-slate-600 truncate mb-2" title={doc.hash}>
-                    Hash: {doc.hash.substring(0, 16)}...
-                  </p>
-                  <p className="text-xs text-slate-500 truncate mb-3">
-                    Uploader: {doc.uploader}
-                  </p>
-                  <div className="flex justify-between items-center mt-3">
-                     <a href={`https://gateway.pinata.cloud/ipfs/${doc.ipfsHash}`} target="_blank" rel="noreferrer" className="text-sm text-blue-600 hover:text-blue-800 font-medium">
-                        Review File ↗
-                     </a>
-                     <button
-                        onClick={() => handleVerify(doc.hash)}
-                        disabled={loading}
-                        className="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1.5 px-4 rounded shadow-sm transition disabled:bg-slate-400"
-                     >
-                        Approve
-                     </button>
+                    <span className="text-xs text-slate-400 font-medium">{doc.date}</span>
                   </div>
+                  <p className="text-sm font-mono text-slate-600 truncate mb-1" title={doc.hash}>
+                    <span className="font-semibold text-slate-800">Hash:</span> {doc.hash}
+                  </p>
+                  <p className="text-xs text-slate-500 truncate" title={doc.uploader}>
+                    <span className="font-semibold text-slate-600">Uploader:</span> {doc.uploader}
+                  </p>
                 </div>
-              ))
-            )}
-          </div>
-        </div>
 
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <a 
+                    href={`https://gateway.pinata.cloud/ipfs/${doc.ipfsHash}`} 
+                    target="_blank" 
+                    rel="noreferrer" 
+                    className="flex items-center gap-2 text-sm text-indigo-600 hover:text-indigo-800 font-medium bg-indigo-50 hover:bg-indigo-100 px-4 py-2 rounded transition"
+                  >
+                    <FileText size={16} /> Review File
+                  </a>
+                  
+                  {/* Approve Button */}
+                  <button
+                    onClick={() => handleVerify(doc.hash)}
+                    disabled={processingId !== null}
+                    className="flex items-center justify-center gap-1 bg-green-600 hover:bg-green-700 text-white text-sm font-bold py-2 px-6 rounded shadow-sm transition disabled:bg-slate-400 w-full sm:w-auto"
+                  >
+                    {processingId === doc.hash ? "Processing..." : "Approve"}
+                  </button>
+
+                  {/* Reject Button */}
+                  <button
+                    onClick={() => handleReject(doc.hash)}
+                    disabled={processingId !== null}
+                    className="flex items-center justify-center p-2 text-red-500 hover:text-white hover:bg-red-500 rounded transition border border-transparent hover:border-red-600 disabled:opacity-50"
+                    title="Reject Document"
+                  >
+                    <Trash2 size={20} />
+                  </button>
+                </div>
+
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

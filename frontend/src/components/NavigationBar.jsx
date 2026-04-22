@@ -1,29 +1,11 @@
 import { useState, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, NavLink } from "react-router-dom"; // Notice we imported NavLink!
 import { ethers } from "ethers";
 import { CONTRACT_ADDRESS, CONTRACT_ABI } from "../utils/config";
+import { useWeb3 } from "../context/Web3Context"; // Using your global context!
 
 const NavigationBar = () => {
-  const [account, setAccount] = useState("");
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  // Function to check if the connected wallet is the Admin
-  const checkAdmin = async (connectedAccount) => {
-    try {
-      if (!window.ethereum) return;
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, provider);
-      
-      // Fetch the admin address from the smart contract
-      const adminAddress = await contract.admin();
-      
-      // Compare addresses (convert to lowercase to avoid case-sensitivity bugs)
-      setIsAdmin(connectedAccount.toLowerCase() === adminAddress.toLowerCase());
-    } catch (error) {
-      console.error("Error checking admin status:", error);
-      setIsAdmin(false);
-    }
-  };
+  const { account, isAdmin } = useWeb3();
 
   // Function triggered by the "Connect Wallet" button
   const connectWallet = async () => {
@@ -33,77 +15,65 @@ const NavigationBar = () => {
     }
     try {
       const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
-      if (accounts.length > 0) {
-        setAccount(accounts[0]);
-        await checkAdmin(accounts[0]);
-      }
+      await provider.send("eth_requestAccounts", []);
+      // Web3Context automatically picks up the account change!
     } catch (error) {
-      console.error("Failed to connect wallet:", error);
+      console.error("Wallet connection failed:", error);
     }
   };
 
-  // Effect to run when the component first loads
-  useEffect(() => {
-    const checkIfWalletIsConnected = async () => {
-      if (window.ethereum) {
-        const provider = new ethers.BrowserProvider(window.ethereum);
-        // "eth_accounts" checks if already connected without popping up MetaMask
-        const accounts = await provider.send("eth_accounts", []);
-        
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-          checkAdmin(accounts[0]);
-        }
-
-        // Event listener: If the user switches accounts in MetaMask, update the UI
-        window.ethereum.on("accountsChanged", (newAccounts) => {
-          if (newAccounts.length > 0) {
-            setAccount(newAccounts[0]);
-            checkAdmin(newAccounts[0]);
-          } else {
-            // User disconnected their wallet
-            setAccount("");
-            setIsAdmin(false);
-          }
-        });
-      }
-    };
-
-    checkIfWalletIsConnected();
-  }, []);
-
   // Helper to make the wallet address look nice (e.g., 0x1234...5678)
   const formatAddress = (addr) => {
+    if (!addr) return "";
     return `${addr.substring(0, 6)}...${addr.substring(addr.length - 4)}`;
   };
 
-  return (
-    <nav className="bg-white shadow-md p-4 mb-8">
-      <div className="max-w-4xl mx-auto flex justify-between items-center">
-        <h1 className="text-2xl font-bold text-blue-900">LexChain</h1>
-        
-        <div className="flex items-center gap-6">
-          <Link to="/" className="text-gray-600 hover:text-blue-600 font-medium">
-            Verify Document
-          </Link>
-          <Link to="/upload" className="text-gray-600 hover:text-blue-600 font-medium">
-            Upload Portal
-          </Link>
+  // This function dynamically applies Tailwind classes based on whether the route is active
+  const navLinkClass = ({ isActive }) =>
+    isActive
+      ? "text-blue-700 font-bold border-b-2 border-blue-700 pb-1 transition"
+      : "text-slate-500 hover:text-blue-600 font-medium transition pb-1";
 
-          <Link to="/my-uploads" className="hover:text-blue-200 transition font-medium">My Uploads</Link>
+  return (
+    <nav className="bg-white shadow-sm border-b border-slate-200 p-4 mb-8 sticky top-0 z-50">
+      <div className="max-w-4xl mx-auto flex justify-between items-center">
+        
+        {/* Logo */}
+        <Link to="/" className="text-2xl font-extrabold text-blue-900 tracking-tight flex items-center gap-2">
+          <div className="w-8 h-8 bg-blue-600 text-white flex items-center justify-center rounded-lg text-lg">L</div>
+          LexChain
+        </Link>
+        
+        {/* Navigation Links */}
+        <div className="flex items-center gap-6">
+          {/* We use 'end' on the home route so it doesn't stay highlighted on sub-pages */}
+          <NavLink to="/verify" end className={navLinkClass}>
+            Verify Document
+          </NavLink>
+          
+          <NavLink to="/upload" className={navLinkClass}>
+            Upload Portal
+          </NavLink>
+
+          <NavLink to="/my-uploads" className={navLinkClass}>
+            My Uploads
+          </NavLink>
           
           {/* Only render this link if the user is the Admin */}
           {isAdmin && (
-            <Link to="/admin" className="text-gray-600 hover:text-blue-600 font-medium">
+            <NavLink to="/admin" className={navLinkClass}>
               Gov Admin
-            </Link>
+            </NavLink>
           )}
 
           {/* Connect Wallet Button */}
           <button
             onClick={connectWallet}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition duration-200 shadow-sm"
+            className={`font-semibold py-2 px-4 rounded-lg shadow-sm transition ${
+              account
+                ? "bg-slate-100 text-slate-700 border border-slate-200 hover:bg-slate-200"
+                : "bg-blue-600 text-white hover:bg-blue-700"
+            }`}
           >
             {account ? formatAddress(account) : "Connect Wallet"}
           </button>

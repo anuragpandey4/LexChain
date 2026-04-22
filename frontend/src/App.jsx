@@ -7,6 +7,7 @@ import { Toaster } from "react-hot-toast";
 import Admin from "./pages/Admin.jsx";
 import { Web3Provider } from "./context/Web3Context.jsx";
 import MyUploads from "./pages/MyUploads.jsx";
+import Home from "./pages/Home.jsx";
 
 
 function App() {
@@ -14,7 +15,7 @@ function App() {
     <Web3Provider>
 
     <BrowserRouter>
-      <div className="min-h-screen bg-slate-50">
+      <div className="min-h-screen bg-slate-50 bg-grid-pattern font-sans text-slate-900">
         {/* Navigation Bar */}
         <NavigationBar />
 
@@ -33,7 +34,8 @@ function App() {
         {/* Page Content */}
         <main className="max-w-4xl mx-auto p-4 bg-white rounded-lg shadow">
           <Routes>
-            <Route path="/" element={<Verify />} />
+            <Route path="/" element={<Home/>} />
+            <Route path="/verify" element={<Verify />} />
             <Route
               path="/upload"
               element={
